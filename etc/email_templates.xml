@@ -1,0 +1,5 @@
+<?xml version="1.0"?>
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Email:etc/email_templates.xsd">
+    <template id="security_scan_alert" label="Security Alert" file="security_scan_alert.html" type="html" module="Retif_SecurityScanner" area="adminhtml"/>
+    <template id="security_scan_clean" label="Clean Security Report" file="security_scan_clean.html" type="html" module="Retif_SecurityScanner" area="adminhtml"/>
+</config>

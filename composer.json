@@ -1,0 +1,37 @@
+{
+    "name": "c0defusi0n/security-scanner",
+    "description": "Security scanner to detect malicious code in Magento 2",
+    "type": "magento2-module",
+    "version": "1.0.0",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "c0defusi0n",
+            "homepage": "https://github.com/c0defusi0n"
+        }
+    ],
+    "require": {
+        "php": "~8.1.0||~8.2.0",
+        "magento/framework": "^103.0.0"
+    },
+    "autoload": {
+        "files": [
+            "registration.php"
+        ],
+        "psr-4": {
+            "C0defusi0n\\SecurityScanner\\": ""
+        }
+    },
+    "minimum-stability": "stable",
+    "keywords": [
+        "magento",
+        "magento2",
+        "security",
+        "scanner",
+        "malware"
+    ],
+    "support": {
+        "issues": "https://github.com/c0defusi0n/security-scanner/issues",
+        "source": "https://github.com/c0defusi0n/security-scanner"
+    }
+}
