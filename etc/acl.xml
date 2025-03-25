@@ -6,7 +6,7 @@
                 <resource id="Magento_Backend::stores">
                     <resource id="Magento_Backend::stores_settings">
                         <resource id="Magento_Config::config">
-                            <resource id="Retif_SecurityScanner::config" title="Retif Security Scanner Configuration" sortOrder="80" />
+                            <resource id="C0defusi0n_SecurityScanner::config" title="Security Scanner Configuration" sortOrder="80" />
                         </resource>
                     </resource>
                 </resource>

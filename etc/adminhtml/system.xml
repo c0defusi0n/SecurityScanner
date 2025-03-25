@@ -2,12 +2,12 @@
 <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
         xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Config:etc/system_file.xsd">
     <system>
-        <tab id="retif" translate="label" sortOrder="100">
-            <label>RETIF</label>
+        <tab id="c0defusi0n" translate="label" sortOrder="100">
+            <label>C0DEFUSI0N</label>
         </tab>
         <section id="security_scanner" translate="label" type="text" sortOrder="20" showInDefault="1" showInWebsite="1" showInStore="1">
             <label>Security Scanner</label>
-            <tab>retif</tab>
+            <tab>c0defusi0n</tab>
             <resource>Magento_Backend::admin</resource>
 
             <group id="general" translate="label" type="text" sortOrder="10" showInDefault="1" showInWebsite="1" showInStore="1">

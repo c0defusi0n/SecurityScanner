@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:App/etc/routes.xsd">
     <router id="admin">
-        <route id="retif_security" frontName="retif_security">
-            <module name="Retif_SecurityScanner" before="Magento_Backend" />
+        <route id="c0defusi0n_security" frontName="c0defusi0n_security">
+            <module name="C0defusi0n_SecurityScanner" before="Magento_Backend" />
         </route>
     </router>
 </config>
