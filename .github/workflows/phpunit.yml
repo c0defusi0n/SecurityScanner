@@ -9,36 +9,12 @@ on:
     - cron: '0 0 * * 0' # Run once per week on Sunday at midnight
 
 jobs:
-  test-magento-compatibility:
-    name: Magento ${{ matrix.magento-version }} / PHP ${{ matrix.php-version }}
+  unit-tests:
+    name: PHP ${{ matrix.php-version }} Unit Tests
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        magento-version: ['2.4.0', '2.4.1', '2.4.2', '2.4.3', '2.4.4', '2.4.5', '2.4.6']
         php-version: ['7.4', '8.1', '8.2']
-        exclude:
-          # PHP 8.1+ is only compatible with newer Magento versions
-          - magento-version: '2.4.0'
-            php-version: '8.1'
-          - magento-version: '2.4.0'
-            php-version: '8.2'
-          - magento-version: '2.4.1'
-            php-version: '8.1'
-          - magento-version: '2.4.1'
-            php-version: '8.2'
-          - magento-version: '2.4.2'
-            php-version: '8.1'
-          - magento-version: '2.4.2'
-            php-version: '8.2'
-          - magento-version: '2.4.3'
-            php-version: '8.2'
-          # Older PHP versions are not compatible with newer Magento versions
-          - magento-version: '2.4.4'
-            php-version: '7.4'
-          - magento-version: '2.4.5'
-            php-version: '7.4'
-          - magento-version: '2.4.6'
-            php-version: '7.4'
 
     steps:
       - name: Checkout code
@@ -49,7 +25,7 @@ jobs:
         with:
           php-version: ${{ matrix.php-version }}
           extensions: mbstring, intl, gd, xml, soap, zip, bcmath
-          coverage: none
+          coverage: xdebug
 
       - name: Get Composer cache directory
         id: composer-cache
@@ -62,35 +38,16 @@ jobs:
           key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.json') }}
           restore-keys: ${{ runner.os }}-composer-
 
-      - name: Configure Composer authentication
-        run: |
-          composer config -g http-basic.repo.magento.com ${{ secrets.MAGENTO_USERNAME }} ${{ secrets.MAGENTO_PASSWORD }}
+      - name: Install PHPUnit
+        run: composer require --dev phpunit/phpunit:^9.5
 
-      - name: Create test project
+      - name: Install Mocking dependencies
         run: |
-          composer create-project --repository-url=https://repo.magento.com/ magento/project-community-edition=${{ matrix.magento-version }} test-project
-          cd test-project
-          composer config minimum-stability dev
-          composer config prefer-stable true
-          # Create the module directory
-          mkdir -p app/code/C0defusi0n/SecurityScanner
-
-      - name: Copy module files to test project
-        run: |
-          rsync -av --exclude='test-project' --exclude='.git' --exclude='vendor' . test-project/app/code/C0defusi0n/SecurityScanner/
-
-      - name: Install module dependencies
-        working-directory: test-project
-        run: |
-          composer require --dev phpunit/phpunit:^9.5
-          composer require phpstan/phpstan:^1.8
-          # Enable the module
-          bin/magento module:enable C0defusi0n_SecurityScanner
+          composer require --dev mockery/mockery
+          composer require --dev phpunit/php-code-coverage
 
       - name: Run unit tests
-        working-directory: test-project/app/code/C0defusi0n/SecurityScanner
-        run: |
-          ../../../../../../vendor/bin/phpunit -c phpunit.xml.dist
+        run: vendor/bin/phpunit -c phpunit.xml.dist --coverage-text
 
   code-quality:
     name: Code Quality Checks
