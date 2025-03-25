@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Store:etc/config.xsd">
+    <default>
+        <security_scanner>
+            <general>
+                <enabled>1</enabled>
+                <scan_frequency>daily</scan_frequency>
+            </general>
+            <email_notification>
+                <enabled>1</enabled>
+                <recipients>{{trans_email/ident_general/email}}</recipients>
+                <send_clean_report>0</send_clean_report>
+            </email_notification>
+            <telegram_notification>
+                <enabled>0</enabled>
+                <send_clean_report>0</send_clean_report>
+            </telegram_notification>
+        </security_scanner>
+    </default>
+</config>
