@@ -62,6 +62,10 @@ jobs:
           key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.json') }}
           restore-keys: ${{ runner.os }}-composer-
 
+      - name: Configure Composer authentication
+        run: |
+          composer config -g http-basic.repo.magento.com ${{ secrets.MAGENTO_USERNAME }} ${{ secrets.MAGENTO_PASSWORD }}
+
       - name: Create test project
         run: |
           composer create-project --repository-url=https://repo.magento.com/ magento/project-community-edition=${{ matrix.magento-version }} test-project
