@@ -11,7 +11,7 @@ class Test extends Action
     /**
      * Authorization level
      */
-    const ADMIN_RESOURCE = 'Retif_SecurityScanner::config';
+    const ADMIN_RESOURCE = 'C0defusi0n_SecurityScanner::config';
 
     /**
      * @param Context $context

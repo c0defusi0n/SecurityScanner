@@ -18,7 +18,7 @@
                 </field>
                 <field id="scan_frequency" translate="label" type="select" sortOrder="20" showInDefault="1" showInWebsite="1" showInStore="1">
                     <label>Scan Frequency</label>
-                    <source_model>Retif\SecurityScanner\Model\Config\Source\ScanFrequency</source_model>
+                    <source_model>C0defusi0n\SecurityScanner\Model\Config\Source\ScanFrequency</source_model>
                     <comment>How often the scanner should run.</comment>
                 </field>
             </group>
@@ -84,7 +84,7 @@
                 </field>
                 <field id="test_button" translate="label" sortOrder="50" showInDefault="1" showInWebsite="1" showInStore="1">
                     <label>Test Telegram Connection</label>
-                    <frontend_model>Retif\SecurityScanner\Block\Adminhtml\System\Config\TestButton</frontend_model>
+                    <frontend_model>C0defusi0n\SecurityScanner\Block\Adminhtml\System\Config\TestButton</frontend_model>
                     <depends>
                         <field id="enabled">1</field>
                     </depends>

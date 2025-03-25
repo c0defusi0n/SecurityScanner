@@ -137,7 +137,7 @@ class Telegram extends AbstractHelper
      */
     public function sendSetupNotification($storeId = null)
     {
-        $message = "🔒 *Retif Security Scanner* 🔒\n\n";
+        $message = "🔒 *C0defusi0n Security Scanner* 🔒\n\n";
         $message .= "The security module has been successfully installed and is now configured to send notifications to this chat.\n\n";
         $message .= "Module version: *1.0.0*\n";
         $message .= "Installation date: *" . date('Y-m-d H:i:s') . "*\n\n";
@@ -164,7 +164,7 @@ class Telegram extends AbstractHelper
 
         try {
             $message = "✅ *Connection test successful* ✅\n\n";
-            $message .= "The Retif Security Scanner is correctly configured to send notifications to this chat.";
+            $message .= "The C0defusi0n Security Scanner is correctly configured to send notifications to this chat.";
 
             $url = "https://api.telegram.org/bot{$botToken}/sendMessage";
             $this->curl->addHeader('Content-Type', 'application/json');

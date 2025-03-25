@@ -81,7 +81,7 @@ class SecurityScan
             return;
         }
 
-        $this->logger->info('Starting Retif Security Scanner scan (CMS blocks only)');
+        $this->logger->info('Starting C0defusi0n Security Scanner scan (CMS blocks only)');
         $suspiciousBlocks = [];
 
         // Add custom patterns from configuration
@@ -212,7 +212,7 @@ class SecurityScan
         $this->notifier->addCritical(
             'Security Alert',
             sprintf(
-                '%d suspicious CMS blocks detected by Retif Security Scanner. Please check the log for more details.',
+                '%d suspicious CMS blocks detected by C0defusi0n Security Scanner. Please check the log for more details.',
                 count($suspiciousBlocks)
             )
         );

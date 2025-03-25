@@ -24,7 +24,7 @@ class ScanCommand extends Command
      */
     protected function configure()
     {
-        $this->setName('retif:security:scan')
+        $this->setName('c0defusi0n:security:scan')
             ->setDescription('Executes a security scan to detect malicious code');
 
         parent::configure();

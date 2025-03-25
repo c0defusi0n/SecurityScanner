@@ -10,7 +10,7 @@ class TestButton extends Field
     /**
      * @var string
      */
-    protected $_template = 'Retif_SecurityScanner::system/config/test_button.phtml';
+    protected $_template = 'C0defusi0n_SecurityScanner::system/config/test_button.phtml';
 
     /**
      * Removes the scope
@@ -42,7 +42,7 @@ class TestButton extends Field
      */
     public function getAjaxUrl()
     {
-        return $this->getUrl('retif_security/telegram/test');
+        return $this->getUrl('c0defusi0n_security/telegram/test');
     }
 
     /**
