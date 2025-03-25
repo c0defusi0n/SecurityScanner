@@ -82,7 +82,7 @@ Once configured, the module will automatically scan your CMS blocks based on the
 You can also trigger a security scan manually using the command line:
 
 ```bash
-bin/magento retif:security:scan
+bin/magento c0defusi0n:security:scan
 ```
 
 ## Customization
