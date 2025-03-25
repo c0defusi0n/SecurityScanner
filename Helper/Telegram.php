@@ -1,5 +1,5 @@
 <?php
-namespace Retif\SecurityScanner\Helper;
+namespace C0defusi0n\SecurityScanner\Helper;
 
 use Magento\Framework\App\Helper\AbstractHelper;
 use Magento\Framework\App\Helper\Context;

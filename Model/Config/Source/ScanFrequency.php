@@ -1,5 +1,5 @@
 <?php
-namespace Retif\SecurityScanner\Model\Config\Source;
+namespace C0defusi0n\SecurityScanner\Model\Config\Source;
 
 class ScanFrequency implements \Magento\Framework\Option\ArrayInterface
 {

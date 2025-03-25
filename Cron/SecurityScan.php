@@ -1,5 +1,5 @@
 <?php
-namespace Retif\SecurityScanner\Cron;
+namespace C0defusi0n\SecurityScanner\Cron;
 
 use Magento\Cms\Model\ResourceModel\Block\CollectionFactory as BlockCollectionFactory;
 use Psr\Log\LoggerInterface;
