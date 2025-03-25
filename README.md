@@ -108,6 +108,29 @@ The module supports multiple languages through Magento's translation system. Eng
 
 For bug reports and feature requests, please use the [GitHub issue tracker](https://github.com/c0defusi0n/security-scanner/issues).
 
+## Testing
+
+### Unit Tests
+
+The module comes with comprehensive unit tests to ensure compatibility and prevent regressions. To run the tests locally:
+
+```bash
+vendor/bin/phpunit -c phpunit.xml.dist
+```
+
+### Continuous Integration
+
+The module uses GitHub Actions for continuous integration to automatically test compatibility with multiple Magento 2.4.x versions and PHP versions. The CI workflow:
+
+1. Tests against Magento versions 2.4.0 through 2.4.6
+2. Verifies compatibility with PHP 7.4, 8.1, and 8.2 (as appropriate for each Magento version)
+3. Performs code quality checks using PHPStan and PHP_CodeSniffer
+
+The CI pipeline runs automatically on:
+- Every push to main/master branch
+- Every pull request to main/master branch
+- Weekly scheduled runs to ensure continuous compatibility
+
 ## License
 
 This module is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
