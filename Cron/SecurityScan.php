@@ -11,9 +11,30 @@ use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\HTTP\Client\Curl;
 use Magento\Framework\App\State;
 use Magento\Framework\ObjectManagerInterface;
+use Magento\Framework\App\ProductMetadataInterface;
+use Magento\Framework\Filesystem;
+use Magento\Framework\App\Filesystem\DirectoryList;
+use Magento\Cms\Model\ResourceModel\Page\CollectionFactory as PageCollectionFactory;
+use Magento\Framework\FlagManager;
+use C0defusi0n\SecurityScanner\Helper\Webhook as WebhookHelper;
 
 class SecurityScan
 {
+    /**
+     * Flag code storing the signatures of findings already alerted on, so the same
+     * issue is not re-notified every scan.
+     */
+    const FLAG_SEEN_FINDINGS = 'c0defusi0n_security_scanner_seen_findings';
+
+    /**
+     * Config paths holding admin-editable HTML — classic Magecart JS injection points.
+     */
+    protected $injectableConfigPaths = [
+        'design/head/includes' => 'Head: Miscellaneous HTML',
+        'design/footer/absolute_footer' => 'Footer: Miscellaneous HTML',
+        'design/header/welcome' => 'Header welcome message',
+    ];
+
     /**
      * @var array
      */
@@ -38,6 +59,24 @@ class SecurityScan
         '/\bsystem\s*\(/i',
         '/\bpassthru\s*\(/i',
         '/\bproc_open\s*\(/i',
+        '/\bpopen\s*\(/i',
+
+        // Webshells : packers et exécution dynamique
+        '/\bgzinflate\s*\(/i',
+        '/\bgzuncompress\s*\(/i',
+        '/\bstr_rot13\s*\(/i',
+        '/\bassert\s*\(/i',
+        '/\bcreate_function\s*\(/i',
+        '/preg_replace\s*\(\s*[\'"][^\'"]*\/e/i',           // modificateur /e (RCE)
+
+        // Entrée utilisateur passée directement à un sink dangereux
+        '/\b(eval|assert|system|exec|shell_exec|passthru|popen|proc_open)\s*\(\s*\$_(GET|POST|REQUEST|COOKIE)/i',
+        '/\bcall_user_func(_array)?\s*\(\s*\$_(GET|POST|REQUEST|COOKIE)/i',
+        '/\$_(GET|POST|REQUEST|COOKIE|SERVER|FILES)\s*\[[^\]]*\]\s*\(/i',   // fonction variable sur superglobale
+
+        // Écriture d'un fichier PHP (drop de backdoor)
+        '/\bfile_put_contents\s*\([^)]*\.ph/i',
+        '/\bfwrite\s*\([^)]*\.ph/i',
 
         // Injection de HTML invisible
         '/\<div.*?style\s*=\s*[\'"]display\s*:\s*none.*?[\'"].*?\>/i',
@@ -66,7 +105,12 @@ class SecurityScan
         protected ScopeConfigInterface $scopeConfig,
         protected Curl $curl,
         protected State $appState,
-        protected ObjectManagerInterface $objectManager
+        protected ObjectManagerInterface $objectManager,
+        protected ProductMetadataInterface $productMetadata,
+        protected Filesystem $filesystem,
+        protected PageCollectionFactory $pageCollectionFactory,
+        protected FlagManager $flagManager,
+        protected WebhookHelper $webhookHelper
     ) {}
 
     /**
@@ -81,23 +125,188 @@ class SecurityScan
             return;
         }
 
-        $this->logger->info('Starting C0defusi0n Security Scanner scan (CMS blocks only)');
-        $suspiciousBlocks = [];
+        $this->logger->info('Starting C0defusi0n Security Scanner scan');
+        $findings = [];
 
         // Add custom patterns from configuration
         $this->addCustomPatterns();
 
-        // Analyze CMS blocks
-        $this->scanCmsBlocks($suspiciousBlocks);
+        // Collect findings across every source
+        $this->scanCmsBlocks($findings);
+        $this->scanCmsPages($findings);
+        $this->scanConfigInjection($findings);
+        $this->scanPolyshell($findings);
 
-        if (!empty($suspiciousBlocks)) {
-            $this->handleSuspiciousCode($suspiciousBlocks);
-        } else {
-            $this->logger->info('Security scan completed: no malicious code detected in CMS blocks');
+        // Drop anything matching the admin ignore-list (known false positives)
+        $findings = $this->filterIgnored($findings);
 
-            // Send clean reports if configured
+        // Only notify on findings not already alerted on a previous scan
+        $newFindings = $this->extractNewFindings($findings);
+
+        if (!empty($newFindings)) {
+            $this->handleSuspiciousCode($newFindings);
+        } elseif (empty($findings)) {
+            $this->logger->info('Security scan completed: no malicious code detected');
             $this->sendCleanReports();
+        } else {
+            $this->logger->info(sprintf(
+                'Security scan completed: %d finding(s), none new since the last scan',
+                count($findings)
+            ));
         }
+    }
+
+    /**
+     * Scans CMS pages for malicious code.
+     *
+     * @param array $findings
+     * @return void
+     */
+    protected function scanCmsPages(&$findings)
+    {
+        foreach ($this->pageCollectionFactory->create() as $page) {
+            $matches = $this->findMaliciousPatterns((string) $page->getContent());
+            if (empty($matches)) {
+                continue;
+            }
+            $findings[] = [
+                'type' => 'cms_page',
+                'id' => $page->getId(),
+                'identifier' => $page->getIdentifier(),
+                'title' => $page->getTitle(),
+                'matches' => $matches,
+            ];
+            $this->logger->warning(sprintf(
+                'Suspicious code detected in CMS page #%s (%s)',
+                $page->getId(),
+                $page->getIdentifier()
+            ));
+        }
+    }
+
+    /**
+     * Scans admin-editable HTML config (head/footer includes, welcome message) — the
+     * #1 place Magecart skimmers inject JavaScript on a compromised store.
+     *
+     * @param array $findings
+     * @return void
+     */
+    protected function scanConfigInjection(&$findings)
+    {
+        $seen = [];
+        foreach ($this->storeManager->getStores() as $store) {
+            foreach ($this->injectableConfigPaths as $path => $label) {
+                $value = $this->scopeConfig->getValue(
+                    $path,
+                    \Magento\Store\Model\ScopeInterface::SCOPE_STORE,
+                    $store->getId()
+                );
+                if (empty($value)) {
+                    continue;
+                }
+                $matches = $this->findMaliciousPatterns($value);
+                if (empty($matches)) {
+                    continue;
+                }
+                // Collapse identical values inherited across stores into one finding.
+                $key = $path . '|' . md5($value);
+                if (isset($seen[$key])) {
+                    continue;
+                }
+                $seen[$key] = true;
+                $findings[] = [
+                    'type' => 'config',
+                    'id' => '-',
+                    'identifier' => $path,
+                    'title' => $label,
+                    'matches' => $matches,
+                ];
+                $this->logger->critical('Suspicious code detected in config: ' . $path);
+            }
+        }
+    }
+
+    /**
+     * Removes findings whose identifier matches an entry of the admin ignore-list.
+     *
+     * @param array $findings
+     * @return array
+     */
+    protected function filterIgnored($findings)
+    {
+        $raw = (string) $this->scopeConfig->getValue('security_scanner/general/ignore_list');
+        $patterns = array_filter(array_map('trim', explode("\n", $raw)), 'strlen');
+        if (empty($patterns)) {
+            return $findings;
+        }
+
+        $kept = [];
+        foreach ($findings as $finding) {
+            if (self::isIgnored($finding['identifier'], $patterns)) {
+                $this->logger->info('Ignored finding (ignore-list): ' . $finding['identifier']);
+                continue;
+            }
+            $kept[] = $finding;
+        }
+        return $kept;
+    }
+
+    /**
+     * Returns the findings not seen on the previous scan, and persists the current
+     * set of signatures so persisting issues are not re-alerted every run.
+     *
+     * @param array $findings
+     * @return array
+     */
+    protected function extractNewFindings($findings)
+    {
+        $previous = (array) ($this->flagManager->getFlagData(self::FLAG_SEEN_FINDINGS) ?: []);
+
+        $current = [];
+        $new = [];
+        foreach ($findings as $finding) {
+            $sig = self::findingSignature($finding);
+            $current[$sig] = true;
+            if (!isset($previous[$sig])) {
+                $new[] = $finding;
+            }
+        }
+
+        $this->flagManager->saveFlag(self::FLAG_SEEN_FINDINGS, $current);
+        return $new;
+    }
+
+    /**
+     * Stable signature of a finding (type + location + matched strings). Pure.
+     *
+     * @param array $item
+     * @return string
+     */
+    public static function findingSignature($item)
+    {
+        $matched = array_map(
+            function ($m) { return $m['match'] ?? ''; },
+            $item['matches'] ?? []
+        );
+        sort($matched);
+        return md5(($item['type'] ?? '') . '|' . ($item['identifier'] ?? '') . '|' . implode("\x1f", $matched));
+    }
+
+    /**
+     * True if $identifier contains any of the ignore-list entries. Pure.
+     *
+     * @param string $identifier
+     * @param string[] $patterns
+     * @return bool
+     */
+    public static function isIgnored($identifier, array $patterns)
+    {
+        foreach ($patterns as $pattern) {
+            if ($pattern !== '' && strpos($identifier, $pattern) !== false) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -127,9 +336,15 @@ class SecurityScan
             $patterns = explode("\n", $customPatterns);
             foreach ($patterns as $pattern) {
                 $pattern = trim($pattern);
-                if (!empty($pattern)) {
-                    $this->maliciousPatterns[] = $pattern;
+                if (empty($pattern)) {
+                    continue;
                 }
+                // An invalid regex makes preg_match_all() return false and break the whole scan; skip it.
+                if (@preg_match($pattern, '') === false) {
+                    $this->logger->warning('Invalid custom security pattern ignored: ' . $pattern);
+                    continue;
+                }
+                $this->maliciousPatterns[] = $pattern;
             }
         }
     }
@@ -193,6 +408,172 @@ class SecurityScan
     }
 
     /**
+     * Scans for PolyShell (APSB25-94) exposure: a potentially vulnerable Magento
+     * version, plus executable/polyglot files dropped under pub/media (the
+     * custom_options upload zone is the documented drop point, but backdoors such
+     * as accesson.php spread across writable media, so the whole tree is swept).
+     *
+     * The PolyShell threat model and detection ideas here are inspired by
+     * aregowe/magento2-module-polyshell-protection
+     * (https://github.com/aregowe/magento2-module-polyshell-protection). That module
+     * *blocks* the attack via framework plugins; this scanner only detects and alerts.
+     *
+     * @param array $findings
+     * @return void
+     */
+    protected function scanPolyshell(&$findings)
+    {
+        // 1. Vulnerable version exposure
+        $version = $this->productMetadata->getVersion();
+        if (self::isVulnerableToPolyshell($version)) {
+            $findings[] = [
+                'type' => 'polyshell_version',
+                'id' => '-',
+                'identifier' => 'magento-version',
+                'title' => 'APSB25-94 (PolyShell) – unrestricted file upload',
+                'matches' => [[
+                    'pattern' => 'version_compare < 2.4.9',
+                    'match' => "Magento {$version} is potentially vulnerable to APSB25-94 (PolyShell). "
+                        . "Confirm the isolated security patch is applied."
+                ]],
+            ];
+            $this->logger->critical("PolyShell: Magento {$version} potentially vulnerable to APSB25-94");
+        }
+
+        // 2. Malicious files in pub/media
+        try {
+            $mediaRoot = $this->filesystem->getDirectoryRead(DirectoryList::MEDIA)->getAbsolutePath();
+        } catch (\Exception $e) {
+            $this->logger->error('PolyShell: cannot read media directory: ' . $e->getMessage());
+            return;
+        }
+        if (!is_dir($mediaRoot)) {
+            return;
+        }
+
+        foreach ($this->findMaliciousMediaFiles($mediaRoot) as $rel) {
+            $findings[] = [
+                'type' => 'malicious_file',
+                'id' => '-',
+                'identifier' => 'media/' . $rel,
+                'title' => 'Executable/polyglot file in media directory',
+                'matches' => [['pattern' => 'media-scan', 'match' => $rel]],
+            ];
+            $this->logger->critical('PolyShell: malicious file in media: ' . $rel);
+        }
+    }
+
+    /**
+     * Walks pub/media and returns relative paths of malicious files: any file with
+     * an executable PHP extension (incl. double-extension like shell.php.jpg), and
+     * any non-PHP file that embeds a PHP open tag (polyglot upload).
+     *
+     * @param string $mediaRoot
+     * @return string[]
+     */
+    protected function findMaliciousMediaFiles($mediaRoot)
+    {
+        $hits = [];
+        try {
+            $iterator = new \RecursiveIteratorIterator(
+                new \RecursiveDirectoryIterator($mediaRoot, \FilesystemIterator::SKIP_DOTS)
+            );
+        } catch (\Exception $e) {
+            return $hits;
+        }
+
+        // ponytail: extension check runs on the whole tree (free, no false positives on images);
+        // content/polyglot scanning is restricted to the upload drop zones, because scanning every
+        // product image for a PHP tag flags legit JPEGs whose random bytes contain "<?". Widen
+        // $dropZones if uploads land elsewhere. Edge read: first+last 64KB (header / appended EOF).
+        $dropZones = ['/custom_options/', '/customer_address/'];
+        foreach ($iterator as $fileInfo) {
+            if (!$fileInfo->isFile()) {
+                continue;
+            }
+            $path = $fileInfo->getPathname();
+            $name = $fileInfo->getFilename();
+
+            // Extension check everywhere (catches accesson.php, shell.php.jpg, *.phtml ...).
+            if (self::mediaFileIsMalicious($name)) {
+                $hits[] = ltrim(str_replace($mediaRoot, '', $path), '/');
+                continue;
+            }
+
+            // Polyglot content check only inside upload drop zones.
+            $inDropZone = false;
+            foreach ($dropZones as $zone) {
+                if (strpos($path, $zone) !== false) {
+                    $inDropZone = true;
+                    break;
+                }
+            }
+            if ($inDropZone && self::mediaFileIsMalicious($name, $this->readFileEdges($path, 65536))) {
+                $hits[] = ltrim(str_replace($mediaRoot, '', $path), '/');
+            }
+        }
+
+        return $hits;
+    }
+
+    /**
+     * Reads up to $bytes from the start and $bytes from the end of a file.
+     *
+     * @param string $path
+     * @param int $bytes
+     * @return string
+     */
+    protected function readFileEdges($path, $bytes)
+    {
+        $size = @filesize($path);
+        if ($size === false) {
+            return '';
+        }
+        if ($size <= $bytes * 2) {
+            return (string) @file_get_contents($path);
+        }
+        $head = (string) @file_get_contents($path, false, null, 0, $bytes);
+        $tail = (string) @file_get_contents($path, false, null, $size - $bytes, $bytes);
+        return $head . $tail;
+    }
+
+    /**
+     * True if a media file is an executable PHP file (incl. double extension) or a
+     * polyglot embedding a PHP open tag. Pure for testability.
+     *
+     * @param string $filename
+     * @param string $content first/last bytes of the file (empty for a name-only check)
+     * @return bool
+     */
+    public static function mediaFileIsMalicious($filename, $content = '')
+    {
+        // No server-side PHP belongs in pub/media; catches shell.php and shell.php.jpg.
+        if (preg_match('/\.(php|phtml|phar|pht|phps|php[3457])(\.|$)/i', $filename)) {
+            return true;
+        }
+        // Polyglot: a media file (image, css, js...) that embeds a PHP open tag.
+        // Full "<?php" only — "<?" / "<?=" occur as random bytes in real JPEGs (false positives),
+        // and a polyglot still needs "<?php" to execute. "<?xml" (SVG) is intentionally not matched.
+        if ($content !== '' && preg_match('/<\?php\b/i', $content)) {
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Heuristic: is this Magento version potentially exposed to APSB25-94 (PolyShell)?
+     *
+     * @param string $version
+     * @return bool
+     */
+    public static function isVulnerableToPolyshell($version)
+    {
+        // ponytail: APSB25-94 affects up to 2.4.9-alpha2; isolated patches on older
+        // lines don't change the version string, hence the "potentially" wording on alerts.
+        return version_compare($version, '2.4.9', '<');
+    }
+
+    /**
      * Handles detected suspicious blocks
      *
      * @param array $suspiciousBlocks
@@ -203,7 +584,7 @@ class SecurityScan
         // Logging
         $this->logger->critical(
             sprintf(
-                'Security scan completed: %d suspicious CMS blocks detected',
+                'Security scan completed: %d new finding(s) detected',
                 count($suspiciousBlocks)
             )
         );
@@ -212,7 +593,7 @@ class SecurityScan
         $this->notifier->addCritical(
             'Security Alert',
             sprintf(
-                '%d suspicious CMS blocks detected by C0defusi0n Security Scanner. Please check the log for more details.',
+                '%d new security finding(s) detected by C0defusi0n Security Scanner. Please check the log for more details.',
                 count($suspiciousBlocks)
             )
         );
@@ -220,6 +601,39 @@ class SecurityScan
         // Send notifications
         $this->sendEmailNotification($suspiciousBlocks);
         $this->sendTelegramNotification($suspiciousBlocks);
+        $this->sendWebhookNotification($suspiciousBlocks);
+    }
+
+    /**
+     * Sends an alert to the generic webhook (Slack, Discord, Teams, Mattermost...)
+     *
+     * @param array $suspiciousBlocks
+     * @return void
+     */
+    protected function sendWebhookNotification($suspiciousBlocks)
+    {
+        if (!$this->scopeConfig->isSetFlag('security_scanner/webhook_notification/enabled')) {
+            return;
+        }
+
+        $storeName = $this->storeManager->getStore()->getName();
+        $message = "🚨 SECURITY ALERT — {$storeName}\n"
+            . count($suspiciousBlocks) . " suspicious item(s) detected:\n\n"
+            . $this->generateDetailedReport($suspiciousBlocks);
+
+        $this->postWebhook($message);
+    }
+
+    /**
+     * POSTs a plain-text message to the configured webhook URL.
+     *
+     * @param string $message
+     * @return void
+     */
+    protected function postWebhook($message)
+    {
+        $url = $this->scopeConfig->getValue('security_scanner/webhook_notification/url');
+        $this->webhookHelper->send($url, $message);
     }
 
     /**
@@ -361,7 +775,7 @@ class SecurityScan
         $message = "🚨 *SECURITY ALERT* 🚨\n\n";
         $message .= "Store: *{$storeName}*\n";
         $message .= "Date: *{$scanDate}*\n";
-        $message .= "Detection: *" . count($suspiciousBlocks) . " potentially malicious CMS blocks*\n\n";
+        $message .= "Detection: *" . count($suspiciousBlocks) . " new security finding(s)*\n\n";
 
         // Summary of detected elements
         foreach ($suspiciousBlocks as $index => $item) {
@@ -370,7 +784,7 @@ class SecurityScan
                 break;
             }
 
-            $message .= "• CMS Block: *" . $item['identifier'] . "* (ID: " . $item['id'] . ")\n";
+            $message .= "• " . $this->findingLabel($item) . ": *" . $item['identifier'] . "*\n";
         }
 
         $message .= "\nCheck the administration for more details.";
@@ -381,7 +795,7 @@ class SecurityScan
         // Create a second message with details of the malicious code
         foreach ($suspiciousBlocks as $index => $item) {
             $detailMessage = "📋 *DETECTION DETAILS* 📋\n\n";
-            $detailMessage .= "Block: *" . $item['identifier'] . "* (ID: " . $item['id'] . ")\n";
+            $detailMessage .= $this->findingLabel($item) . ": *" . $item['identifier'] . "*\n";
             $detailMessage .= "Title: *" . $item['title'] . "*\n\n";
             $detailMessage .= "*Malicious code detected:*\n";
 
@@ -456,6 +870,28 @@ class SecurityScan
     }
 
     /**
+     * Human-readable label for a finding, by type.
+     *
+     * @param array $item
+     * @return string
+     */
+    protected function findingLabel($item)
+    {
+        switch ($item['type'] ?? 'cms_block') {
+            case 'polyshell_version':
+                return 'Vulnerability';
+            case 'malicious_file':
+                return 'Media file';
+            case 'cms_page':
+                return 'CMS Page #' . $item['id'];
+            case 'config':
+                return 'Config';
+            default:
+                return 'CMS Block #' . $item['id'];
+        }
+    }
+
+    /**
      * Generates a detailed report
      *
      * @param array $suspiciousBlocks
@@ -463,10 +899,10 @@ class SecurityScan
      */
     protected function generateDetailedReport($suspiciousBlocks)
     {
-        $report = "Details of suspicious CMS blocks:\n\n";
+        $report = "Details of detected items:\n\n";
 
         foreach ($suspiciousBlocks as $item) {
-            $report .= "CMS Block #{$item['id']} ({$item['identifier']}): {$item['title']}\n";
+            $report .= $this->findingLabel($item) . " ({$item['identifier']}): {$item['title']}\n";
 
             foreach ($item['matches'] as $match) {
                 $report .= "- Suspicious code: " . htmlspecialchars($match['match']) . "\n";
@@ -497,6 +933,14 @@ class SecurityScan
             $this->scopeConfig->isSetFlag('security_scanner/telegram_notification/send_clean_report')) {
 
             $this->sendCleanTelegramReport();
+        }
+
+        // Check for Webhook
+        if ($this->scopeConfig->isSetFlag('security_scanner/webhook_notification/enabled') &&
+            $this->scopeConfig->isSetFlag('security_scanner/webhook_notification/send_clean_report')) {
+
+            $storeName = $this->storeManager->getStore()->getName();
+            $this->postWebhook("✅ SECURITY REPORT — {$storeName}\nNo malicious code detected during this scan.");
         }
     }
 
@@ -580,7 +1024,7 @@ class SecurityScan
         $message = "✅ *SECURITY REPORT* ✅\n\n";
         $message .= "Store: *{$storeName}*\n";
         $message .= "Scan date: *{$scanDate}*\n\n";
-        $message .= "No malicious code detected in CMS blocks during this scan.";
+        $message .= "No malicious code detected during this scan.";
 
         // Send to all configured chats
         $chatIdList = explode(',', $chatIds);

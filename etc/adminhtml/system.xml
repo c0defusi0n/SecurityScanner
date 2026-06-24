@@ -21,6 +21,10 @@
                     <source_model>C0defusi0n\SecurityScanner\Model\Config\Source\ScanFrequency</source_model>
                     <comment>How often the scanner should run.</comment>
                 </field>
+                <field id="ignore_list" translate="label" type="textarea" sortOrder="30" showInDefault="1" showInWebsite="1" showInStore="1">
+                    <label>Ignore List</label>
+                    <comment>One entry per line. Any finding whose location (CMS identifier, config path, media path...) contains an entry is ignored. Use to silence known false positives.</comment>
+                </field>
             </group>
 
             <group id="email_notification" translate="label" type="text" sortOrder="20" showInDefault="1" showInWebsite="1" showInStore="1">
@@ -60,9 +64,10 @@
                     <label>Enable Telegram Notifications</label>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                 </field>
-                <field id="bot_token" translate="label" type="text" sortOrder="20" showInDefault="1" showInWebsite="1" showInStore="1">
+                <field id="bot_token" translate="label" type="obscure" sortOrder="20" showInDefault="1" showInWebsite="1" showInStore="1">
                     <label>Telegram Bot Token</label>
                     <comment>The API token of your Telegram bot.</comment>
+                    <backend_model>Magento\Config\Model\Config\Backend\Encrypted</backend_model>
                     <depends>
                         <field id="enabled">1</field>
                     </depends>
@@ -85,6 +90,38 @@
                 <field id="test_button" translate="label" sortOrder="50" showInDefault="1" showInWebsite="1" showInStore="1">
                     <label>Test Telegram Connection</label>
                     <frontend_model>C0defusi0n\SecurityScanner\Block\Adminhtml\System\Config\TestButton</frontend_model>
+                    <depends>
+                        <field id="enabled">1</field>
+                    </depends>
+                </field>
+            </group>
+
+            <group id="webhook_notification" translate="label" type="text" sortOrder="35" showInDefault="1" showInWebsite="1" showInStore="1">
+                <label>Webhook Notifications</label>
+                <comment>Generic incoming webhook (Slack, Discord, Mattermost, Microsoft Teams, Google Chat...). The message is POSTed as JSON.</comment>
+                <field id="enabled" translate="label" type="select" sortOrder="10" showInDefault="1" showInWebsite="1" showInStore="1">
+                    <label>Enable Webhook Notifications</label>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                </field>
+                <field id="url" translate="label" type="text" sortOrder="20" showInDefault="1" showInWebsite="1" showInStore="1">
+                    <label>Webhook URL</label>
+                    <comment>The incoming webhook URL to POST notifications to.</comment>
+                    <validate>validate-url</validate>
+                    <depends>
+                        <field id="enabled">1</field>
+                    </depends>
+                </field>
+                <field id="send_clean_report" translate="label" type="select" sortOrder="30" showInDefault="1" showInWebsite="1" showInStore="1">
+                    <label>Send Clean Reports</label>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <comment>Send a report even if no malicious code is detected.</comment>
+                    <depends>
+                        <field id="enabled">1</field>
+                    </depends>
+                </field>
+                <field id="test_button" translate="label" sortOrder="40" showInDefault="1" showInWebsite="1" showInStore="1">
+                    <label>Test Webhook</label>
+                    <frontend_model>C0defusi0n\SecurityScanner\Block\Adminhtml\System\Config\WebhookTestButton</frontend_model>
                     <depends>
                         <field id="enabled">1</field>
                     </depends>

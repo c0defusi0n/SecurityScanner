@@ -2,7 +2,7 @@
     "name": "c0defusi0n/security-scanner",
     "description": "Security scanner to detect malicious code in Magento 2",
     "type": "magento2-module",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "license": "MIT",
     "authors": [
         {

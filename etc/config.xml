@@ -5,6 +5,7 @@
             <general>
                 <enabled>1</enabled>
                 <scan_frequency>daily</scan_frequency>
+                <ignore_list></ignore_list>
             </general>
             <email_notification>
                 <enabled>1</enabled>
@@ -15,6 +16,10 @@
                 <enabled>0</enabled>
                 <send_clean_report>0</send_clean_report>
             </telegram_notification>
+            <webhook_notification>
+                <enabled>0</enabled>
+                <send_clean_report>0</send_clean_report>
+            </webhook_notification>
         </security_scanner>
     </default>
 </config>

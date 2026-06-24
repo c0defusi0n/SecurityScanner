@@ -1,0 +1,37 @@
+<!-- File: view/adminhtml/templates/system/config/webhook_test_button.phtml -->
+<div class="webhook-test-container">
+    <?= $block->getButtonHtml() ?>
+    <div class="webhook-test-result" id="webhook_test_result" style="margin-top: 10px;"></div>
+</div>
+
+<script type="text/javascript">
+    require(['jquery'], function($) {
+        $(document).ready(function() {
+            $('#webhook_test_button').click(function() {
+                var resultElem = $('#webhook_test_result');
+                resultElem.html('<div class="message message-notice">Test in progress, please wait...</div>');
+
+                var url = $('input[name="groups[webhook_notification][fields][url][value]"]').val();
+
+                if (!url) {
+                    resultElem.html('<div class="message message-error">Please fill in the webhook URL first.</div>');
+                    return;
+                }
+
+                $.ajax({
+                    url: '<?= $block->getAjaxUrl() ?>',
+                    type: 'POST',
+                    dataType: 'json',
+                    data: { url: url },
+                    success: function(response) {
+                        var cls = response.success ? 'message-success' : 'message-error';
+                        resultElem.html('<div class="message ' + cls + '">' + response.message + '</div>');
+                    },
+                    error: function() {
+                        resultElem.html('<div class="message message-error">An error occurred while communicating with the server.</div>');
+                    }
+                });
+            });
+        });
+    });
+</script>
