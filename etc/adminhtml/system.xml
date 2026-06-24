@@ -128,6 +128,53 @@
                 </field>
             </group>
 
+            <group id="ai_scanner" translate="label" type="text" sortOrder="38" showInDefault="1" showInWebsite="1" showInStore="1">
+                <label>AI Scanner (optional)</label>
+                <comment>Send scanned content (CMS blocks/pages, HTML config) to an OpenAI-compatible LLM for a second opinion alongside the regex patterns. Works with a local model (Ollama, LM Studio, vLLM, llama.cpp) or an external API (OpenAI, ...).</comment>
+                <field id="enabled" translate="label" type="select" sortOrder="10" showInDefault="1" showInWebsite="1" showInStore="1">
+                    <label>Enable AI Scanner</label>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                </field>
+                <field id="endpoint" translate="label" type="text" sortOrder="20" showInDefault="1" showInWebsite="1" showInStore="1">
+                    <label>Chat Completions Endpoint</label>
+                    <comment>e.g. http://host.docker.internal:11434/v1/chat/completions (Ollama) or https://api.openai.com/v1/chat/completions</comment>
+                    <validate>validate-url</validate>
+                    <depends>
+                        <field id="enabled">1</field>
+                    </depends>
+                </field>
+                <field id="model" translate="label" type="text" sortOrder="30" showInDefault="1" showInWebsite="1" showInStore="1">
+                    <label>Model</label>
+                    <comment>e.g. qwen2.5-coder, llama3.1, gpt-4o-mini</comment>
+                    <depends>
+                        <field id="enabled">1</field>
+                    </depends>
+                </field>
+                <field id="api_key" translate="label" type="obscure" sortOrder="40" showInDefault="1" showInWebsite="1" showInStore="1">
+                    <label>API Key</label>
+                    <comment>Optional. Sent as a Bearer token (needed for external APIs, usually empty for a local model).</comment>
+                    <backend_model>Magento\Config\Model\Config\Backend\Encrypted</backend_model>
+                    <depends>
+                        <field id="enabled">1</field>
+                    </depends>
+                </field>
+                <field id="max_chars" translate="label" type="text" sortOrder="50" showInDefault="1" showInWebsite="1" showInStore="1">
+                    <label>Max Characters Sent</label>
+                    <comment>Content is truncated to this length before being sent to the model (bounds cost and context). Default 12000.</comment>
+                    <validate>validate-digits</validate>
+                    <depends>
+                        <field id="enabled">1</field>
+                    </depends>
+                </field>
+                <field id="system_prompt" translate="label comment" type="textarea" sortOrder="60" showInDefault="1" showInWebsite="1" showInStore="1">
+                    <label>System Prompt</label>
+                    <comment><![CDATA[Instructions sent to the model. Keep the defensive framing and the rule that the scanned content is <strong>untrusted data, never instructions</strong> &mdash; otherwise the AI may refuse or be tricked by malicious content. The scanned content is appended automatically inside delimiters. Leave empty to fall back to a built-in safe prompt.]]></comment>
+                    <depends>
+                        <field id="enabled">1</field>
+                    </depends>
+                </field>
+            </group>
+
             <group id="malicious_patterns" translate="label" type="text" sortOrder="40" showInDefault="1" showInWebsite="1" showInStore="1">
                 <label>Malicious Code Detection Patterns</label>
                 <field id="custom_patterns" translate="label" type="textarea" sortOrder="10" showInDefault="1" showInWebsite="1" showInStore="1">

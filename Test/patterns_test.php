@@ -87,4 +87,14 @@ $f2 = ['type' => 'cms_block', 'identifier' => 'bar', 'matches' => [['match' => '
 assert($M::findingSignature($f1) === $M::findingSignature($f1b), 'signature must be order-independent');
 assert($M::findingSignature($f1) !== $M::findingSignature($f2), 'different location => different signature');
 
+// 9. AI verdict parsing: tolerates code fences and surrounding prose.
+$v = $M::parseAiVerdict('{"malicious": true, "reason": "obfuscated base64 eval"}');
+assert($v['malicious'] === true && $v['reason'] === 'obfuscated base64 eval', 'plain JSON verdict');
+$v = $M::parseAiVerdict("```json\n{\"malicious\": false, \"reason\": \"clean\"}\n```");
+assert($v['malicious'] === false, 'fenced JSON verdict');
+$v = $M::parseAiVerdict('Sure! Here is the result: {"malicious":true,"reason":"skimmer"} hope it helps');
+assert($v['malicious'] === true && $v['reason'] === 'skimmer', 'JSON embedded in prose');
+$v = $M::parseAiVerdict('the model rambled with no json');
+assert($v['malicious'] === false && $v['reason'] === '', 'no JSON => not malicious');
+
 echo "OK: " . count($patterns) . " patterns, all assertions passed\n";

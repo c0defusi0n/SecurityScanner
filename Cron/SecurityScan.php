@@ -17,6 +17,7 @@ use Magento\Framework\App\Filesystem\DirectoryList;
 use Magento\Cms\Model\ResourceModel\Page\CollectionFactory as PageCollectionFactory;
 use Magento\Framework\FlagManager;
 use C0defusi0n\SecurityScanner\Helper\Webhook as WebhookHelper;
+use C0defusi0n\SecurityScanner\Helper\AiScanner as AiScannerHelper;
 
 class SecurityScan
 {
@@ -110,7 +111,8 @@ class SecurityScan
         protected Filesystem $filesystem,
         protected PageCollectionFactory $pageCollectionFactory,
         protected FlagManager $flagManager,
-        protected WebhookHelper $webhookHelper
+        protected WebhookHelper $webhookHelper,
+        protected AiScannerHelper $aiScanner
     ) {}
 
     /**
@@ -165,7 +167,11 @@ class SecurityScan
     protected function scanCmsPages(&$findings)
     {
         foreach ($this->pageCollectionFactory->create() as $page) {
-            $matches = $this->findMaliciousPatterns((string) $page->getContent());
+            $content = (string) $page->getContent();
+            $matches = $this->findMaliciousPatterns($content);
+            if ($ai = $this->aiScanner->analyze($content, 'cms_page:' . $page->getIdentifier())) {
+                $matches[] = $ai;
+            }
             if (empty($matches)) {
                 continue;
             }
@@ -205,6 +211,9 @@ class SecurityScan
                     continue;
                 }
                 $matches = $this->findMaliciousPatterns($value);
+                if ($ai = $this->aiScanner->analyze($value, 'config:' . $path)) {
+                    $matches[] = $ai;
+                }
                 if (empty($matches)) {
                     continue;
                 }
@@ -310,6 +319,27 @@ class SecurityScan
     }
 
     /**
+     * Parses an AI model reply into a verdict. Tolerates code fences and surrounding
+     * prose by extracting the first {...} JSON object. Pure.
+     *
+     * @param string $text
+     * @return array{malicious: bool, reason: string}
+     */
+    public static function parseAiVerdict($text)
+    {
+        if (preg_match('/\{.*\}/s', (string) $text, $m)) {
+            $data = json_decode($m[0], true);
+            if (is_array($data) && array_key_exists('malicious', $data)) {
+                return [
+                    'malicious' => (bool) $data['malicious'],
+                    'reason' => trim((string) ($data['reason'] ?? '')),
+                ];
+            }
+        }
+        return ['malicious' => false, 'reason' => ''];
+    }
+
+    /**
      * Checks if the module is enabled
      *
      * @return bool
@@ -361,6 +391,9 @@ class SecurityScan
         foreach ($blockCollection as $block) {
             $content = $block->getContent();
             $matches = $this->findMaliciousPatterns($content);
+            if ($ai = $this->aiScanner->analyze($content, 'cms_block:' . $block->getIdentifier())) {
+                $matches[] = $ai;
+            }
 
             if (!empty($matches)) {
                 $suspiciousBlocks[] = [
