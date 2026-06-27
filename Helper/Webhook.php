@@ -42,6 +42,16 @@ class Webhook extends AbstractHelper
             return false;
         }
 
+        // Only http(s) is ever a valid webhook target. Reject file://, gopher://, etc. that could
+        // be smuggled through the admin/test param. We deliberately do NOT block private/loopback
+        // hosts: a self-hosted Slack/Mattermost/ntfy on an internal IP is a legitimate, documented
+        // target, so an IP-range block would break real setups. The endpoint is admin-only anyway.
+        $scheme = strtolower((string) parse_url($url, PHP_URL_SCHEME));
+        if (!in_array($scheme, ['http', 'https'], true)) {
+            $this->logger->warning('Webhook notification rejected: unsupported URL scheme');
+            return false;
+        }
+
         try {
             if (stripos($url, 'ntfy') !== false) {
                 // ntfy takes the raw body as the message text (Title/Tags via headers).
@@ -54,7 +64,12 @@ class Webhook extends AbstractHelper
                 // "text", Discord reads "content"; each ignores the key it doesn't use. Add a per-format
                 // adapter only if a target needs blocks/embeds.
                 $this->curl->addHeader('Content-Type', 'application/json');
-                $this->curl->post($url, json_encode(['text' => $message, 'content' => $message]));
+                $this->curl->post($url, json_encode([
+                    'text' => $message,
+                    'content' => $message,
+                    // Discord: never expand @everyone/@here/role pings injected via scanned content.
+                    'allowed_mentions' => ['parse' => []],
+                ]));
             }
 
             $status = $this->curl->getStatus();
@@ -62,7 +77,8 @@ class Webhook extends AbstractHelper
                 $this->logger->info('Webhook notification sent (HTTP ' . $status . ')');
                 return true;
             }
-            $this->logger->error('Webhook notification failed: HTTP ' . $status . ' ' . $this->curl->getBody());
+            // Log status only — the remote body is untrusted (log injection / unbounded inflation).
+            $this->logger->error('Webhook notification failed: HTTP ' . $status);
             return false;
         } catch (\Exception $e) {
             $this->logger->error('Exception when sending webhook notification: ' . $e->getMessage());

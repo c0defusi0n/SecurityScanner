@@ -97,4 +97,9 @@ assert($v['malicious'] === true && $v['reason'] === 'skimmer', 'JSON embedded in
 $v = $M::parseAiVerdict('the model rambled with no json');
 assert($v['malicious'] === false && $v['reason'] === '', 'no JSON => not malicious');
 
+// 10. Telegram Markdown escaping: control chars in attacker-influenced fields are neutralized.
+assert($M::escapeTelegramMarkdown('[x](http://evil)') === '\\[x\\](http://evil)', 'link brackets must be escaped');
+assert($M::escapeTelegramMarkdown('*bold* _i_ `c`') === '\\*bold\\* \\_i\\_ \\`c\\`', 'markdown control chars must be escaped');
+assert($M::escapeTelegramMarkdown('plain title') === 'plain title', 'clean text must be unchanged');
+
 echo "OK: " . count($patterns) . " patterns, all assertions passed\n";

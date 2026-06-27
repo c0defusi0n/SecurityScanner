@@ -28,6 +28,12 @@ class SecurityScan
     const FLAG_SEEN_FINDINGS = 'c0defusi0n_security_scanner_seen_findings';
 
     /**
+     * Upper bound (bytes) on content fed to the regex engine. Mirrors the AI path's
+     * mb_substr cap and prevents a single oversized CMS value from OOM-ing the scan.
+     */
+    const MAX_SCAN_BYTES = 2097152;
+
+    /**
      * Config paths holding admin-editable HTML — classic Magecart JS injection points.
      */
     protected $injectableConfigPaths = [
@@ -143,10 +149,16 @@ class SecurityScan
         $findings = $this->filterIgnored($findings);
 
         // Only notify on findings not already alerted on a previous scan
-        $newFindings = $this->extractNewFindings($findings);
+        ['new' => $newFindings, 'current' => $seen] = $this->extractNewFindings($findings);
 
         if (!empty($newFindings)) {
-            $this->handleSuspiciousCode($newFindings);
+            // If every enabled external channel failed to deliver, keep the new findings out of
+            // the "seen" set so the next scan re-alerts them instead of silently dropping them.
+            if (!$this->handleSuspiciousCode($newFindings)) {
+                foreach ($newFindings as $finding) {
+                    unset($seen[self::findingSignature($finding)]);
+                }
+            }
         } elseif (empty($findings)) {
             $this->logger->info('Security scan completed: no malicious code detected');
             $this->sendCleanReports();
@@ -156,6 +168,9 @@ class SecurityScan
                 count($findings)
             ));
         }
+
+        // Persist the seen-set only now, after delivery, so an undelivered finding is retried.
+        $this->flagManager->saveFlag(self::FLAG_SEEN_FINDINGS, $seen);
     }
 
     /**
@@ -265,7 +280,7 @@ class SecurityScan
      * set of signatures so persisting issues are not re-alerted every run.
      *
      * @param array $findings
-     * @return array
+     * @return array{new: array, current: array} new findings, plus the full current signature set
      */
     protected function extractNewFindings($findings)
     {
@@ -281,8 +296,9 @@ class SecurityScan
             }
         }
 
-        $this->flagManager->saveFlag(self::FLAG_SEEN_FINDINGS, $current);
-        return $new;
+        // Pure: the caller persists $current AFTER notifications succeed, so a finding that
+        // could not be delivered is not prematurely marked "seen".
+        return ['new' => $new, 'current' => $current];
     }
 
     /**
@@ -426,14 +442,40 @@ class SecurityScan
     {
         $matches = [];
 
+        // Bound memory: a single oversized CMS/config value (mediumtext is ~16MB) run through
+        // ~25 patterns can exhaust the cron/CLI process. ponytail: 2MB is far above any real
+        // value; a payload past the cap is missed, but an OOM that aborts the scan misses everything.
+        $content = (string) $content;
+        if (strlen($content) > self::MAX_SCAN_BYTES) {
+            $this->logger->warning(sprintf(
+                'Scan content truncated to %d of %d bytes; content beyond the cap is not scanned',
+                self::MAX_SCAN_BYTES,
+                strlen($content)
+            ));
+            $content = substr($content, 0, self::MAX_SCAN_BYTES);
+        }
+
         foreach ($this->maliciousPatterns as $pattern) {
-            if (preg_match_all($pattern, $content, $found)) {
-                foreach ($found[0] as $match) {
-                    $matches[] = [
-                        'pattern' => $pattern,
-                        'match' => $match
-                    ];
-                }
+            $found = [];
+            $count = preg_match_all($pattern, $content, $found);
+            // preg_match_all returns false (not 0) when PCRE bails out — e.g. backtrack/recursion
+            // limit on crafted input. Treating that as "no match" lets an attacker evade detection
+            // by forcing the engine to give up on their payload, so surface it as suspicious instead.
+            if ($count === false) {
+                $this->logger->warning(
+                    'PCRE error (' . preg_last_error() . ') evaluating a detection pattern; flagging content as suspicious: ' . $pattern
+                );
+                $matches[] = [
+                    'pattern' => $pattern,
+                    'match' => '[scan error: content could not be evaluated against a detection pattern]',
+                ];
+                continue;
+            }
+            foreach ($found[0] as $match) {
+                $matches[] = [
+                    'pattern' => $pattern,
+                    'match' => $match
+                ];
             }
         }
 
@@ -610,7 +652,8 @@ class SecurityScan
      * Handles detected suspicious blocks
      *
      * @param array $suspiciousBlocks
-     * @return void
+     * @return bool true if delivered (or nothing to deliver to); false if every enabled
+     *              external channel failed — the caller then re-arms the findings for retry.
      */
     protected function handleSuspiciousCode($suspiciousBlocks)
     {
@@ -622,7 +665,7 @@ class SecurityScan
             )
         );
 
-        // Notification dans l'admin
+        // Persistent in-admin notification — always delivered, independent of external channels.
         $this->notifier->addCritical(
             'Security Alert',
             sprintf(
@@ -631,22 +674,29 @@ class SecurityScan
             )
         );
 
-        // Send notifications
-        $this->sendEmailNotification($suspiciousBlocks);
-        $this->sendTelegramNotification($suspiciousBlocks);
-        $this->sendWebhookNotification($suspiciousBlocks);
+        // Each channel returns null (disabled), true (delivered) or false (enabled but failed).
+        $results = [
+            $this->sendEmailNotification($suspiciousBlocks),
+            $this->sendTelegramNotification($suspiciousBlocks),
+            $this->sendWebhookNotification($suspiciousBlocks),
+        ];
+        $attempted = array_filter($results, function ($r) { return $r !== null; });
+
+        // Nothing enabled: the admin notification stands and there is nothing to retry.
+        // Otherwise count it delivered only if at least one enabled channel succeeded.
+        return empty($attempted) || in_array(true, $attempted, true);
     }
 
     /**
      * Sends an alert to the generic webhook (Slack, Discord, Teams, Mattermost...)
      *
      * @param array $suspiciousBlocks
-     * @return void
+     * @return bool|null null if disabled, true if delivered, false if it failed
      */
     protected function sendWebhookNotification($suspiciousBlocks)
     {
         if (!$this->scopeConfig->isSetFlag('security_scanner/webhook_notification/enabled')) {
-            return;
+            return null;
         }
 
         $storeName = $this->storeManager->getStore()->getName();
@@ -654,19 +704,19 @@ class SecurityScan
             . count($suspiciousBlocks) . " suspicious item(s) detected:\n\n"
             . $this->generateDetailedReport($suspiciousBlocks);
 
-        $this->postWebhook($message);
+        return $this->postWebhook($message);
     }
 
     /**
      * POSTs a plain-text message to the configured webhook URL.
      *
      * @param string $message
-     * @return void
+     * @return bool true on a 2xx response
      */
     protected function postWebhook($message)
     {
         $url = $this->scopeConfig->getValue('security_scanner/webhook_notification/url');
-        $this->webhookHelper->send($url, $message);
+        return $this->webhookHelper->send($url, $message);
     }
 
     /**
@@ -697,9 +747,10 @@ class SecurityScan
     {
         // Check if email notifications are enabled
         if (!$this->scopeConfig->isSetFlag('security_scanner/email_notification/enabled')) {
-            return;
+            return null;
         }
 
+        $sent = false;
         try {
             // Set the area code to avoid the "Area code is not set" error
             $this->setAreaCode();
@@ -713,7 +764,7 @@ class SecurityScan
 
             if (empty($recipients)) {
                 $this->logger->warning('No email recipient configured. Alert email will not be sent.');
-                return;
+                return false;
             }
 
             // Additional verification to ensure recipients are valid
@@ -729,7 +780,7 @@ class SecurityScan
 
             if (!$validRecipients) {
                 $this->logger->warning('No valid email address found in configuration. Alert email will not be sent.');
-                return;
+                return false;
             }
 
             $this->inlineTranslation->suspend();
@@ -768,6 +819,7 @@ class SecurityScan
                         ->getTransport();
 
                     $transport->sendMessage();
+                    $sent = true;
                     $this->logger->info('Security alert email sent to ' . $recipient);
                 } catch (\Exception $e) {
                     $this->logger->error('Error sending email to ' . $recipient . ': ' . $e->getMessage());
@@ -778,6 +830,8 @@ class SecurityScan
         } catch (\Exception $e) {
             $this->logger->error('Error sending alert emails: ' . $e->getMessage());
         }
+
+        return $sent;
     }
 
     /**
@@ -790,7 +844,7 @@ class SecurityScan
     {
         // Check if Telegram notifications are enabled
         if (!$this->scopeConfig->isSetFlag('security_scanner/telegram_notification/enabled')) {
-            return;
+            return null;
         }
 
         $botToken = $this->scopeConfig->getValue('security_scanner/telegram_notification/bot_token');
@@ -798,7 +852,7 @@ class SecurityScan
 
         if (empty($botToken) || empty($chatIds)) {
             $this->logger->warning('Incomplete Telegram configuration: missing token or chat ID');
-            return;
+            return false;
         }
 
         $storeName = $this->storeManager->getStore()->getName();
@@ -817,28 +871,24 @@ class SecurityScan
                 break;
             }
 
-            $message .= "• " . $this->findingLabel($item) . ": *" . $item['identifier'] . "*\n";
+            $message .= "• " . $this->findingLabel($item) . ": *" . self::escapeTelegramMarkdown($item['identifier']) . "*\n";
         }
 
         $message .= "\nCheck the administration for more details.";
 
-        // Send the main message
-        $this->sendTelegramMessage($botToken, $chatIds, $message);
+        // Send the main message; its delivery is what we report back for retry logic.
+        $mainOk = $this->sendTelegramMessage($botToken, $chatIds, $message);
 
         // Create a second message with details of the malicious code
         foreach ($suspiciousBlocks as $index => $item) {
             $detailMessage = "📋 *DETECTION DETAILS* 📋\n\n";
-            $detailMessage .= $this->findingLabel($item) . ": *" . $item['identifier'] . "*\n";
-            $detailMessage .= "Title: *" . $item['title'] . "*\n\n";
+            $detailMessage .= $this->findingLabel($item) . ": *" . self::escapeTelegramMarkdown($item['identifier']) . "*\n";
+            $detailMessage .= "Title: *" . self::escapeTelegramMarkdown($item['title']) . "*\n\n";
             $detailMessage .= "*Malicious code detected:*\n";
 
             foreach ($item['matches'] as $matchIdx => $match) {
                 // Escape special Markdown characters
-                $escapedCode = str_replace(
-                    ['_', '*', '`', '[', ']'],
-                    ['\_', '\*', '\`', '\[', '\]'],
-                    $match['match']
-                );
+                $escapedCode = self::escapeTelegramMarkdown($match['match']);
 
                 // Limit length to avoid issues with Telegram
                 if (strlen($escapedCode) > 800) {
@@ -861,6 +911,8 @@ class SecurityScan
                 break;
             }
         }
+
+        return $mainOk;
     }
 
     /**
@@ -869,12 +921,13 @@ class SecurityScan
      * @param string $botToken
      * @param string $chatIds
      * @param string $message
-     * @return void
+     * @return bool true if delivered to at least one chat
      */
     protected function sendTelegramMessage($botToken, $chatIds, $message)
     {
         // Send to all configured chats
         $chatIdList = explode(',', $chatIds);
+        $anyOk = false;
         foreach ($chatIdList as $chatId) {
             $chatId = trim($chatId);
             if (empty($chatId)) {
@@ -892,6 +945,7 @@ class SecurityScan
 
                 $response = json_decode($this->curl->getBody(), true);
                 if (isset($response['ok']) && $response['ok']) {
+                    $anyOk = true;
                     $this->logger->info('Telegram message successfully sent to ' . $chatId);
                 } else {
                     $this->logger->error('Error sending Telegram message: ' . json_encode($response));
@@ -900,6 +954,8 @@ class SecurityScan
                 $this->logger->error('Exception when sending Telegram message: ' . $e->getMessage());
             }
         }
+
+        return $anyOk;
     }
 
     /**
@@ -935,7 +991,12 @@ class SecurityScan
         $report = "Details of detected items:\n\n";
 
         foreach ($suspiciousBlocks as $item) {
-            $report .= $this->findingLabel($item) . " ({$item['identifier']}): {$item['title']}\n";
+            // identifier/title come from attacker-influenceable CMS fields (block/page title,
+            // media file path) and land in an HTML email rendered with {{var details|raw}}.
+            // Escape them as HTML, exactly like $match below, so the |raw sink stays safe.
+            $report .= $this->findingLabel($item)
+                . ' (' . htmlspecialchars((string) $item['identifier']) . '): '
+                . htmlspecialchars((string) $item['title']) . "\n";
 
             foreach ($item['matches'] as $match) {
                 $report .= "- Suspicious code: " . htmlspecialchars($match['match']) . "\n";
@@ -945,6 +1006,22 @@ class SecurityScan
         }
 
         return $report;
+    }
+
+    /**
+     * Escapes the Telegram (legacy Markdown) control characters so attacker-influenced
+     * finding fields cannot inject links/formatting or break the message parse. Pure.
+     *
+     * @param string $s
+     * @return string
+     */
+    public static function escapeTelegramMarkdown($s)
+    {
+        return str_replace(
+            ['_', '*', '`', '[', ']'],
+            ['\_', '\*', '\`', '\[', '\]'],
+            (string) $s
+        );
     }
 
     /**

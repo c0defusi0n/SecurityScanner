@@ -106,7 +106,9 @@ class AiScanner extends AbstractHelper
 
             $status = $this->curl->getStatus();
             if ($status < 200 || $status >= 300) {
-                $this->logger->error('AI scanner HTTP ' . $status . ': ' . $this->curl->getBody());
+                // Untrusted response body: cap length and strip CR/LF (log injection / inflation).
+                $this->logger->error('AI scanner HTTP ' . $status . ': '
+                    . str_replace(["\r", "\n"], ' ', mb_substr((string) $this->curl->getBody(), 0, 500)));
                 return null;
             }
 
