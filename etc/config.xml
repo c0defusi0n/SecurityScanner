@@ -22,10 +22,12 @@
             </webhook_notification>
             <remote_signatures>
                 <enabled>0</enabled>
+                <url>https://raw.githubusercontent.com/c0defusi0n/securityscanner-signatures/main/signatures.json</url>
                 <update_interval>24</update_interval>
             </remote_signatures>
             <vuln_feed>
                 <enabled>0</enabled>
+                <url>https://raw.githubusercontent.com/c0defusi0n/securityscanner-feed/main/feed.json</url>
                 <update_interval>1</update_interval>
                 <max_items>10</max_items>
             </vuln_feed>

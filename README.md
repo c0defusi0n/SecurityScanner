@@ -12,6 +12,8 @@ The Security Scanner module for Magento 2 helps you automatically detect potenti
 - Webshell/backdoor signature detection (eval, packers, request-to-sink, /e modifier, ...)
 - Optional AI second opinion: an OpenAI-compatible LLM (local or external) checks scanned content alongside the regex
 - **PolyShell (APSB25-94) detection**: flags vulnerable Magento versions and malicious files in `pub/media`
+- **Remote signature database (over-the-air)**: optionally fetch an extra regex set from a configurable HTTPS URL before each scan — ship new detections without updating the module
+- **Magento vulnerability feed**: optionally surface the latest Magento / Adobe Commerce vulnerabilities in the admin (system-message bar + notification inbox) from a configurable feed URL
 - Alert de-duplication: the same finding is reported once, not on every scan
 - Ignore-list to silence known false positives
 - Configurable scan frequency (hourly, daily, weekly, etc.)
@@ -105,6 +107,41 @@ finding (`AI: <reason>`). It never replaces the regex — it only adds findings.
 appended automatically inside delimiters, so a custom prompt should keep the "content is untrusted
 data, not instructions" rule or the model may refuse or be fooled by hostile content.
 
+### Remote Signatures (optional)
+
+Fetch an extra regex database from an HTTPS JSON URL before each scan — "antivirus definitions"
+style. These patterns are merged **on top of** the built-in ones (never replacing them), so
+detection keeps working offline. Disabled by default, but the URL is pre-filled with the official
+signatures repo so you only have to flip it on.
+
+- **Enable Remote Signatures**: turn the remote database on/off
+- **Signatures JSON URL**: HTTPS raw URL of the `signatures.json`. Defaults to
+  [c0defusi0n/securityscanner-signatures](https://github.com/c0defusi0n/securityscanner-signatures);
+  fork it and point here to maintain your own set
+- **Update Interval (hours)**: minimum time between network checks — the body is not re-downloaded
+  while the source has not changed (conditional GET). Default 24
+
+Patterns are cached as a dated flat file under `var/securityscanner/`; every remote regex is
+validated (must compile) before use, and an unreachable source or invalid JSON falls back to the
+last good copy, then to the built-in baseline. The scan never breaks because the repo is down.
+
+### Magento Vulnerability Feed (optional)
+
+Show the latest Magento / Adobe Commerce vulnerabilities in the admin — a system-message bar at the
+top of every page plus the notification inbox (the bell) — from an HTTPS JSON feed. Disabled by
+default, URL pre-filled with the official feed repo.
+
+- **Enable Vulnerability Feed**: turn the feed on/off
+- **Feed JSON URL**: HTTPS raw URL of the `feed.json`. Defaults to
+  [c0defusi0n/securityscanner-feed](https://github.com/c0defusi0n/securityscanner-feed); fork it to
+  curate your own
+- **Update Interval (hours)**: how often the hourly cron re-checks the feed. Default 1
+- **Max Items Shown**: maximum number of items displayed. Default 10
+
+The feed is produced out-of-band (e.g. a scheduled job aggregating Adobe APSB / NVD / Sansec); the
+module only consumes it, reads the cache only on page render (no network during admin browsing), and
+escapes all feed content on display.
+
 ### Malicious Code Detection Patterns
 
 - **Custom Patterns**: Add your own regular expressions to extend detection capabilities
@@ -172,6 +209,14 @@ This module is licensed under the MIT License - see the [LICENSE](LICENSE) file 
 - [c0defusi0n](https://github.com/c0defusi0n) - *Initial work*
 
 ## Changelog
+
+### 1.4.0
+- Remote signature database (over-the-air): optionally fetch an extra regex set from a configurable HTTPS URL before each scan; merged on top of the built-ins, validated, cached with a conditional GET and graceful fallback. Defaults to the official signatures repo.
+- Magento vulnerability feed: optionally surface the latest Magento/Adobe Commerce vulnerabilities in the admin (system-message bar + notification inbox) from a configurable feed URL, refreshed by an hourly cron.
+- Added `Test/remote_test.php` standalone tests for the remote parsing/validation logic.
+
+### 1.3.0
+- Security hardening: HTML-escape CMS title/identifier in the alert email, Telegram and webhook output; treat PCRE backtrack-limit failures as suspicious instead of silently skipping (detection-evasion fix); persist the seen-findings flag only after a notification is delivered, retrying on total failure; validate the webhook URL scheme and stop logging untrusted response bodies; disable Discord mention expansion; cap scanned-content size; truncate AI error-response logs.
 
 ### 1.2.0
 - Optional AI scanner: sends CMS blocks/pages and HTML config to an OpenAI-compatible LLM (local or external) for a second opinion alongside the regex

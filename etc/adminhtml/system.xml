@@ -184,7 +184,7 @@
                 </field>
                 <field id="url" translate="label" type="text" sortOrder="20" showInDefault="1" showInWebsite="1" showInStore="1">
                     <label>Signatures JSON URL</label>
-                    <comment>HTTPS raw URL, e.g. https://raw.githubusercontent.com/&lt;you&gt;/&lt;repo&gt;/main/signatures.json</comment>
+                    <comment>Defaults to the official c0defusi0n signatures repo. Point to your own fork to customise. HTTPS raw URL only.</comment>
                     <validate>validate-url</validate>
                     <depends>
                         <field id="enabled">1</field>
@@ -209,7 +209,7 @@
                 </field>
                 <field id="url" translate="label" type="text" sortOrder="20" showInDefault="1" showInWebsite="1" showInStore="1">
                     <label>Feed JSON URL</label>
-                    <comment>HTTPS raw URL, e.g. https://raw.githubusercontent.com/&lt;you&gt;/&lt;repo&gt;/main/feed.json</comment>
+                    <comment>Defaults to the official c0defusi0n vulnerability-feed repo. Point to your own fork to customise. HTTPS raw URL only.</comment>
                     <validate>validate-url</validate>
                     <depends>
                         <field id="enabled">1</field>
