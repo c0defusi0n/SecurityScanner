@@ -18,6 +18,7 @@ use Magento\Cms\Model\ResourceModel\Page\CollectionFactory as PageCollectionFact
 use Magento\Framework\FlagManager;
 use C0defusi0n\SecurityScanner\Helper\Webhook as WebhookHelper;
 use C0defusi0n\SecurityScanner\Helper\AiScanner as AiScannerHelper;
+use C0defusi0n\SecurityScanner\Helper\Signatures as SignaturesHelper;
 
 class SecurityScan
 {
@@ -118,7 +119,8 @@ class SecurityScan
         protected PageCollectionFactory $pageCollectionFactory,
         protected FlagManager $flagManager,
         protected WebhookHelper $webhookHelper,
-        protected AiScannerHelper $aiScanner
+        protected AiScannerHelper $aiScanner,
+        protected SignaturesHelper $signatures
     ) {}
 
     /**
@@ -136,8 +138,9 @@ class SecurityScan
         $this->logger->info('Starting C0defusi0n Security Scanner scan');
         $findings = [];
 
-        // Add custom patterns from configuration
+        // Add custom patterns from configuration, then the remote signature DB (if enabled).
         $this->addCustomPatterns();
+        $this->addRemoteSignatures();
 
         // Collect findings across every source
         $this->scanCmsBlocks($findings);
@@ -392,6 +395,21 @@ class SecurityScan
                 }
                 $this->maliciousPatterns[] = $pattern;
             }
+        }
+    }
+
+    /**
+     * Merges the remote signature database (if enabled) on top of the built-in and custom
+     * patterns. Patterns are already validated by the helper; a remote outage is a no-op.
+     *
+     * @return void
+     */
+    protected function addRemoteSignatures()
+    {
+        $remote = $this->signatures->getPatterns();
+        if (!empty($remote)) {
+            $this->maliciousPatterns = array_merge($this->maliciousPatterns, $remote);
+            $this->logger->info(sprintf('Loaded %d remote signature pattern(s)', count($remote)));
         }
     }
 

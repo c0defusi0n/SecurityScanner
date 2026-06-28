@@ -7,4 +7,11 @@
             </argument>
         </arguments>
     </type>
+    <type name="Magento\Framework\Notification\MessageList">
+        <arguments>
+            <argument name="messages" xsi:type="array">
+                <item name="c0defusi0n_security_vuln_feed" xsi:type="string">C0defusi0n\SecurityScanner\Model\Notification\VulnSystemMessage</item>
+            </argument>
+        </arguments>
+    </type>
 </config>

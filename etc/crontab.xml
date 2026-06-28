@@ -4,5 +4,8 @@
         <job name="c0defusi0n_security_scanner_cron" instance="C0defusi0n\SecurityScanner\Cron\SecurityScan" method="execute">
             <schedule>0 */6 * * *</schedule>
         </job>
+        <job name="c0defusi0n_security_scanner_feed" instance="C0defusi0n\SecurityScanner\Cron\RefreshFeed" method="execute">
+            <schedule>0 * * * *</schedule>
+        </job>
     </group>
 </config>

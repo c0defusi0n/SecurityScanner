@@ -175,6 +175,64 @@
                 </field>
             </group>
 
+            <group id="remote_signatures" translate="label" type="text" sortOrder="39" showInDefault="1" showInWebsite="1" showInStore="1">
+                <label>Remote Signatures (optional)</label>
+                <comment>Fetch an extra regex database from a GitHub (or any HTTPS) JSON URL before each scan — "antivirus definitions" style. These patterns are added ON TOP of the built-in ones, so detection keeps working offline. Update the remote repo to ship new detections without releasing the module. See docs/remote-repos.</comment>
+                <field id="enabled" translate="label" type="select" sortOrder="10" showInDefault="1" showInWebsite="1" showInStore="1">
+                    <label>Enable Remote Signatures</label>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                </field>
+                <field id="url" translate="label" type="text" sortOrder="20" showInDefault="1" showInWebsite="1" showInStore="1">
+                    <label>Signatures JSON URL</label>
+                    <comment>HTTPS raw URL, e.g. https://raw.githubusercontent.com/&lt;you&gt;/&lt;repo&gt;/main/signatures.json</comment>
+                    <validate>validate-url</validate>
+                    <depends>
+                        <field id="enabled">1</field>
+                    </depends>
+                </field>
+                <field id="update_interval" translate="label" type="text" sortOrder="30" showInDefault="1" showInWebsite="1" showInStore="1">
+                    <label>Update Interval (hours)</label>
+                    <comment>Minimum time between network checks. The body is not re-downloaded while the source has not changed. Default 24.</comment>
+                    <validate>validate-digits</validate>
+                    <depends>
+                        <field id="enabled">1</field>
+                    </depends>
+                </field>
+            </group>
+
+            <group id="vuln_feed" translate="label" type="text" sortOrder="41" showInDefault="1" showInWebsite="1" showInStore="1">
+                <label>Magento Vulnerability Feed (optional)</label>
+                <comment>Show the latest Magento/Adobe Commerce vulnerabilities in the admin (system-message bar at the top + notification inbox) from an HTTPS JSON feed. The feed is produced out-of-band (e.g. a scheduled AI job) and only consumed here. See docs/remote-repos.</comment>
+                <field id="enabled" translate="label" type="select" sortOrder="10" showInDefault="1" showInWebsite="1" showInStore="1">
+                    <label>Enable Vulnerability Feed</label>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                </field>
+                <field id="url" translate="label" type="text" sortOrder="20" showInDefault="1" showInWebsite="1" showInStore="1">
+                    <label>Feed JSON URL</label>
+                    <comment>HTTPS raw URL, e.g. https://raw.githubusercontent.com/&lt;you&gt;/&lt;repo&gt;/main/feed.json</comment>
+                    <validate>validate-url</validate>
+                    <depends>
+                        <field id="enabled">1</field>
+                    </depends>
+                </field>
+                <field id="update_interval" translate="label" type="text" sortOrder="30" showInDefault="1" showInWebsite="1" showInStore="1">
+                    <label>Update Interval (hours)</label>
+                    <comment>How often the hourly cron re-checks the feed. Default 1.</comment>
+                    <validate>validate-digits</validate>
+                    <depends>
+                        <field id="enabled">1</field>
+                    </depends>
+                </field>
+                <field id="max_items" translate="label" type="text" sortOrder="40" showInDefault="1" showInWebsite="1" showInStore="1">
+                    <label>Max Items Shown</label>
+                    <comment>Maximum number of feed items kept/displayed. Default 10.</comment>
+                    <validate>validate-digits</validate>
+                    <depends>
+                        <field id="enabled">1</field>
+                    </depends>
+                </field>
+            </group>
+
             <group id="malicious_patterns" translate="label" type="text" sortOrder="40" showInDefault="1" showInWebsite="1" showInStore="1">
                 <label>Malicious Code Detection Patterns</label>
                 <field id="custom_patterns" translate="label" type="textarea" sortOrder="10" showInDefault="1" showInWebsite="1" showInStore="1">

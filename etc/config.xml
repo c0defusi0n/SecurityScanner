@@ -20,6 +20,15 @@
                 <enabled>0</enabled>
                 <send_clean_report>0</send_clean_report>
             </webhook_notification>
+            <remote_signatures>
+                <enabled>0</enabled>
+                <update_interval>24</update_interval>
+            </remote_signatures>
+            <vuln_feed>
+                <enabled>0</enabled>
+                <update_interval>1</update_interval>
+                <max_items>10</max_items>
+            </vuln_feed>
             <ai_scanner>
                 <enabled>0</enabled>
                 <max_chars>12000</max_chars>
