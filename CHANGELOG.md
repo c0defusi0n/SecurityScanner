@@ -5,11 +5,11 @@ All notable changes to **C0defusi0n SecurityScanner**. Each version ships as a g
 
 ---
 
-## v1.4.0 — Remote signatures & Magento vulnerability feed (upcoming)
+## v1.4.0 — Remote signatures & Magento vulnerability feed (2026-06-29)
 
-> Status: committed and pushed to `main`; **not yet tagged** — testing before release.
-> `composer.json` is at `1.4.0`. The two data sources are **optional and OFF by default** —
-> nothing changes until you enable them and set a URL.
+> Rolls up the v1.3.0 security hardening listed below — 1.3.0 was not released separately, so 1.4.0
+> is the first published build since 1.2.0. The two data sources are **optional and OFF by default**
+> — nothing changes until you enable them and set a URL.
 
 ### Added — Remote signature database ("antivirus definitions" model)
 - Fetch an **extra regex database** from an admin-configured **HTTPS JSON URL** before each scan.
