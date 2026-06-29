@@ -20,9 +20,11 @@ namespace Magento\Framework\App\Helper {
 namespace {
     require __DIR__ . '/../Helper/Signatures.php';
     require __DIR__ . '/../Helper/VulnFeed.php';
+    require __DIR__ . '/../Helper/AiScanner.php';
 
     $S = '\C0defusi0n\SecurityScanner\Helper\Signatures';
     $F = '\C0defusi0n\SecurityScanner\Helper\VulnFeed';
+    $A = '\C0defusi0n\SecurityScanner\Helper\AiScanner';
 
     // 1. Signatures: keep valid regexes (object or bare string), drop the rest.
     $patterns = $S::extractPatterns([
@@ -66,5 +68,13 @@ namespace {
     $big = ['patterns' => array_fill(0, $S::MAX_PATTERNS + 50, '/a/')];
     assert(count($S::extractPatterns($big)) === $S::MAX_PATTERNS, 'remote pattern count cap enforced');
 
-    echo "OK: remote signature + vuln-feed parsing assertions passed\n";
+    // 5. AI pre-filter (option B): only content with markup or code-like tokens is worth scanning.
+    assert($A::worthScanning('<script>x</script>') === true, 'script tag => scan');
+    assert($A::worthScanning('<p>hello</p>') === true, 'any HTML tag => scan');
+    assert($A::worthScanning('atob("ZXk=")') === true, 'code token => scan');
+    assert($A::worthScanning('document.cookie') === true, 'js token => scan');
+    assert($A::worthScanning('Welcome to our store — free shipping today!') === false, 'pure prose => skip');
+    assert($A::worthScanning('') === false, 'empty => skip');
+
+    echo "OK: remote signature + vuln-feed + ai-prefilter assertions passed\n";
 }

@@ -187,7 +187,8 @@ class SecurityScan
         foreach ($this->pageCollectionFactory->create() as $page) {
             $content = (string) $page->getContent();
             $matches = $this->findMaliciousPatterns($content);
-            if ($ai = $this->aiScanner->analyze($content, 'cms_page:' . $page->getIdentifier())) {
+            // A — only ask the AI about pages the regex did not already flag.
+            if (empty($matches) && ($ai = $this->aiScanner->analyze($content, 'cms_page:' . $page->getIdentifier()))) {
                 $matches[] = $ai;
             }
             if (empty($matches)) {
@@ -229,7 +230,8 @@ class SecurityScan
                     continue;
                 }
                 $matches = $this->findMaliciousPatterns($value);
-                if ($ai = $this->aiScanner->analyze($value, 'config:' . $path)) {
+                // A — only ask the AI about config values the regex did not already flag.
+                if (empty($matches) && ($ai = $this->aiScanner->analyze($value, 'config:' . $path))) {
                     $matches[] = $ai;
                 }
                 if (empty($matches)) {
@@ -425,7 +427,8 @@ class SecurityScan
         foreach ($blockCollection as $block) {
             $content = $block->getContent();
             $matches = $this->findMaliciousPatterns($content);
-            if ($ai = $this->aiScanner->analyze($content, 'cms_block:' . $block->getIdentifier())) {
+            // A — the AI is a second opinion for what the regex missed; skip it when already flagged.
+            if (empty($matches) && ($ai = $this->aiScanner->analyze($content, 'cms_block:' . $block->getIdentifier()))) {
                 $matches[] = $ai;
             }
 

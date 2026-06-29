@@ -36,6 +36,13 @@ All notable changes to **C0defusi0n SecurityScanner**. Each version ships as a g
 - The feed is produced **out-of-band** (e.g. a scheduled AI job aggregating Adobe APSB / NVD /
   Sansec). The module only **consumes** it — the producer is fully swappable.
 
+### Changed — AI scanner efficiency
+- The optional AI scanner is now only queried for items the **regex did not already flag** (A),
+  content with **no markup or code-like tokens** is pre-filtered out before any request (B), and
+  every verdict is **cached by content hash** (model + prompt + content) so unchanged content is
+  never re-sent (C). Big win on repeat scans, especially against a one-request-at-a-time local model.
+  Same findings, far fewer LLM round-trips. The cache uses the app cache (re-warms after `cache:flush`).
+
 ### Added — Configuration & scaffolding
 - New config groups under *Stores ▸ Configuration ▸ C0DEFUSI0N ▸ Security Scanner*:
   **Remote Signatures** (enable / URL / update interval) and **Magento Vulnerability Feed**

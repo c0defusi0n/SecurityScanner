@@ -213,7 +213,8 @@ This module is licensed under the MIT License - see the [LICENSE](LICENSE) file 
 ### 1.4.0
 - Remote signature database (over-the-air): optionally fetch an extra regex set from a configurable HTTPS URL before each scan; merged on top of the built-ins, validated, cached with a conditional GET and graceful fallback. Defaults to the official signatures repo.
 - Magento vulnerability feed: optionally surface the latest Magento/Adobe Commerce vulnerabilities in the admin (system-message bar + notification inbox) from a configurable feed URL, refreshed by an hourly cron.
-- Added `Test/remote_test.php` standalone tests for the remote parsing/validation logic.
+- AI scanner efficiency: the LLM is now only queried for items the regex did not already flag, content with no markup/code is pre-filtered out, and verdicts are cached by content hash so unchanged content is never re-sent (big win on repeat scans against a local model).
+- Added `Test/remote_test.php` standalone tests for the remote parsing/validation and the AI pre-filter.
 
 ### 1.3.0
 - Security hardening: HTML-escape CMS title/identifier in the alert email, Telegram and webhook output; treat PCRE backtrack-limit failures as suspicious instead of silently skipping (detection-evasion fix); persist the seen-findings flag only after a notification is delivered, retrying on total failure; validate the webhook URL scheme and stop logging untrusted response bodies; disable Discord mention expansion; cap scanned-content size; truncate AI error-response logs.
